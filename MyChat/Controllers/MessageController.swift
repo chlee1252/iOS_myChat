@@ -46,33 +46,64 @@ class MessageController: UITableViewController {
         
         tableView.register(UserCell.self, forCellReuseIdentifier: cellId)
         
-        observeMessages()
+//        observeMessages()
+        
+//        observeUserMessages()
     }
     var messages = [Message]()
     var messagesDictionary = [String: Message]()
-    
-    func observeMessages() {
-        let ref = Database.database().reference().child("messages")
+    func observeUserMessages() {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        let ref = Database.database().reference().child("user-messages").child(uid)
         ref.observe(.childAdded, with: { (snapshot) in
             
-            if let dictionary = snapshot.value as? [String: AnyObject] {
-                let message = Message(dictionary: dictionary)
-//                self.messages.append(message)
-                
-                if let toId = message.toId {
-                    self.messagesDictionary[toId] = message
-                    self.messages = Array(self.messagesDictionary.values)
-                    self.messages.sort(by: {(message1, message2) -> Bool in
-                        return message1.timestamp?.int32Value > message2.timestamp?.int32Value
+            let messageId = snapshot.key
+            let messagesReference = Database.database().reference().child("messages").child(messageId)
+            
+            messagesReference.observeSingleEvent(of: .value, with: {(snapshot) in
+                if let dictionary = snapshot.value as? [String: AnyObject] {
+                    let message = Message(dictionary: dictionary)
+                    
+                    if let toId = message.toId {
+                        self.messagesDictionary[toId] = message
+                        self.messages = Array(self.messagesDictionary.values)
+                        self.messages.sort(by: {(message1, message2) -> Bool in
+                            if let timestamp1 = message1.timestamp, let timestamp2 = message2.timestamp {
+                                return timestamp1.intValue > timestamp2.intValue
+                            }
+                            return false
+                        })
+                    }
+                    
+                    DispatchQueue.main.async(execute: {
+                        self.tableView.reloadData()
                     })
                 }
-                
-                DispatchQueue.main.async {
-                    self.tableView.reloadData()
-                }
-            }
+            }, withCancel: nil)
         }, withCancel: nil)
     }
+//    func observeMessages() {
+//        let ref = Database.database().reference().child("messages")
+//        ref.observe(.childAdded, with: { (snapshot) in
+//            
+//            if let dictionary = snapshot.value as? [String: AnyObject] {
+//                let message = Message(dictionary: dictionary)
+////                self.messages.append(message)
+//                
+//                if let toId = message.toId {
+//                    self.messagesDictionary[toId] = message
+//                    self.messages = Array(self.messagesDictionary.values)
+//                    self.messages.sort(by: {(message1, message2) -> Bool in
+//                        return message1.timestamp?.int32Value > message2.timestamp?.int32Value
+//                    })
+//                }
+//                
+//                DispatchQueue.main.async {
+//                    self.tableView.reloadData()
+//                }
+//            }
+//        }, withCancel: nil)
+//    }
     
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return messages.count
@@ -88,6 +119,25 @@ class MessageController: UITableViewController {
     
     override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         return 72
+    }
+    
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        let message = messages[indexPath.row]
+        
+        guard let chatPartnerId = message.chatPartnerId() else {
+            return
+        }
+        
+        let ref = Database.database().reference().child("users").child(chatPartnerId)
+        ref.observeSingleEvent(of: .value, with: { (snapshot) in
+            guard let dictionary = snapshot.value as? [String: AnyObject] else {
+                return
+            }
+            
+            let user = User(dictionary: dictionary)
+            user.id = chatPartnerId
+            self.showChatController(user: user)
+        }, withCancel: nil)
     }
     
     @objc func handleNewMessage() {
@@ -122,6 +172,12 @@ class MessageController: UITableViewController {
     }
     
     func setupNavbarWithUser(user: User) {
+        messages.removeAll()
+        messagesDictionary.removeAll()
+        tableView.reloadData()
+        
+        observeUserMessages()
+        
         let titleView = CustomTitleView()
 
         let containerView = UIView()

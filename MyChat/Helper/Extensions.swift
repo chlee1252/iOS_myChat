@@ -2,7 +2,7 @@
 //  Extensions.swift
 //  MyChat
 //
-//  Created by Jieun Park on 10/11/19.
+//  Created by Marc Lee on 10/11/19.
 //  Copyright © 2019 Marc Lee. All rights reserved.
 //
 
